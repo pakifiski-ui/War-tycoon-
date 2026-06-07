@@ -1,26 +1,41 @@
+-- Выводим текст в консоль для проверки запуска
+print("[WT Cheat]: Попытка запуска скрипта...")
+
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local player = Players.LocalPlayer
 local camera = workspace.CurrentCamera
-local playerGui = player:WaitForChild("PlayerGui")
+local playerGui = player:WaitForChild("PlayerGui", 10)
 
--- Глобальные настройки
+if not playerGui then
+    warn("[WT Cheat]: Не удалось найти PlayerGui!")
+    return
+end
+
+-- Настройки
 local aimbotEnabled = false
 local infAmmoEnabled = false
-local fovRadius = 150
+local fovRadius = 130
 local smoothSpeed = 0.15
 local maxDistance = 750
 
--- Создание контейнера под круг FOV и ESP
+-- Защита от повторного запуска (удаляем старое меню, если оно было)
+if playerGui:FindFirstChild("MobileMenu") then
+    playerGui.MobileMenu:Destroy()
+end
+if playerGui:FindFirstChild("WT_CheatsGui") then
+    playerGui.WT_CheatsGui:Destroy()
+end
+
+-- Основной контейнер под FOV и элементы
 local mainGui = Instance.new("ScreenGui")
 mainGui.Name = "WT_CheatsGui"
 mainGui.ResetOnSpawn = false
 mainGui.Parent = playerGui
 
--- Визуальный круг FOV через интерфейс (работает везде)
+-- Визуальный круг FOV
 local fovCircle = Instance.new("Frame")
 fovCircle.Name = "FOVCircle"
 fovCircle.AnchorPoint = Vector2.new(0.5, 0.5)
@@ -35,13 +50,12 @@ local fovCorner = Instance.new("UICorner")
 fovCorner.CornerRadius = UDim.new(1, 0)
 fovCorner.Parent = fovCircle
 
--- Функция обновления положения круга FOV
 local function updateFOVCirclePosition()
 	fovCircle.Size = UDim2.new(0, fovRadius * 2, 0, fovRadius * 2)
 	fovCircle.Position = UDim2.new(0, camera.ViewportSize.X / 2, 0, camera.ViewportSize.Y / 2)
 end
 
--- Очистка старых боксов ESP
+-- Очистка ESP
 local function clearESP()
 	for _, p in ipairs(Players:GetPlayers()) do
 		if p.Character then
@@ -52,15 +66,13 @@ local function clearESP()
 	end
 end
 
--- Создание стабильного 3D ESP
+-- Создание ESP
 local function createESPForCharacter(char, otherPlayer)
 	if not aimbotEnabled or otherPlayer == player then return end
 	if player.Team ~= nil and otherPlayer.Team == player.Team then return end
 
 	local root = char:WaitForChild("HumanoidRootPart", 5)
-	local humanoid = char:WaitForChild("Humanoid", 5)
-	
-	if root and humanoid and not char:FindFirstChild("WT_ESPBox") then
+	if root and not char:FindFirstChild("WT_ESPBox") then
 		local box = Instance.new("BoxHandleAdornment")
 		box.Name = "WT_ESPBox"
 		box.Size = char:GetExtentsSize() + Vector3.new(0.4, 0.4, 0.4)
@@ -73,27 +85,16 @@ local function createESPForCharacter(char, otherPlayer)
 	end
 end
 
--- Мониторинг игроков на сервере
+-- Сканирование игроков для ESP
 local function monitorPlayers()
 	for _, p in ipairs(Players:GetPlayers()) do
-		if p ~= player then
-			if p.Character then createESPForCharacter(p.Character, p) end
-			p.CharacterAdded:Connect(function(char)
-				task.wait(0.4)
-				createESPForCharacter(char, p)
-			end)
-		end
+		if p ~= player and p.Character then 
+            createESPForCharacter(p.Character, p) 
+        end
 	end
 end
 
-Players.PlayerAdded:Connect(function(p)
-	p.CharacterAdded:Connect(function(char)
-		task.wait(0.4)
-		createESPForCharacter(char, p)
-	end)
-end)
-
--- Поиск цели (приоритет центру экрана)
+-- Поиск ближайшей цели
 local function getClosestPlayerToCenter()
 	local closestTarget = nil
 	local shortestDistance = math.huge
@@ -126,10 +127,10 @@ local function getClosestPlayerToCenter()
 	return closestTarget
 end
 
--- Бесконечные патроны для оружия War Tycoon
+-- Поток бесконечных патронов
 task.spawn(function()
 	while true do
-		task.wait(0.1)
+		task.wait(0.2)
 		if infAmmoEnabled and player.Character then
 			local tool = player.Character:FindFirstChildOfClass("Tool")
 			if tool then
@@ -141,48 +142,15 @@ task.spawn(function()
 						end
 					end
 				end
-				
-				local module = tool:FindFirstChildOfClass("ModuleScript")
-				if module then
-					local success, result = pcall(require, module)
-					if success and type(result) == "table" then
-						for key, value in pairs(result) do
-							if string.find(string.lower(key), "ammo") or string.find(string.lower(key), "mag") or key == "MaxAmmo" or key == "ClipSize" then
-								rawset(result, key, 999)
-							end
-						end
-					end
-				end
 			end
 		end
 	end
 end)
 
--- Хукинг эвентов перезарядки (без ошибок синтаксиса)
-if hookmetamethod then
-	local oldFireServer
-	oldFireServer = hookmetamethod(game, "__namecall", function(self, ...)
-		local method = getnamecallmethod()
-		if infAmmoEnabled and method == "FireServer" and self:IsA("RemoteEvent") then
-			if string.find(string.lower(self.Name), "reload") or string.find(string.lower(self.Name), "ammo") then
-				return nil
-			end
-		end
-		return oldFireServer(self, ...)
-	end)
-end
-
--- Ежекадровое обновление Аима и Фова
+-- Кадровое обновление Аима
 RunService.RenderStepped:Connect(function()
 	if aimbotEnabled then
 		updateFOVCirclePosition()
-		
-		if math.random(1, 8) == 1 then
-			for _, p in ipairs(Players:GetPlayers()) do
-				if p.Character then createESPForCharacter(p.Character, p) end
-			end
-		end
-		
 		if player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
 			local target = getClosestPlayerToCenter()
 			if target then
@@ -193,19 +161,18 @@ RunService.RenderStepped:Connect(function()
 	end
 end)
 
--- Создание интерфейса
+-- Создание UI Меню (Упрощенный и надежный вариант)
 local function createMenu()
-	if playerGui:FindFirstChild("MobileMenu") then return end
-
 	local screenGui = Instance.new("ScreenGui")
 	screenGui.Name = "MobileMenu"
 	screenGui.ResetOnSpawn = false
 	screenGui.Parent = playerGui
 
+	-- Кнопка открытия
 	local openButton = Instance.new("TextButton")
-	openButton.Size = UDim2.new(0.12, 0, 0.06, 0)
-	openButton.Position = UDim2.new(0.02, 0, 0.45, 0)
-	openButton.Text = "Меню"
+	openButton.Size = UDim2.new(0, 100, 0, 45)
+	openButton.Position = UDim2.new(0.02, 0, 0.4, 0)
+	openButton.Text = "ОТКРЫТЬ"
 	openButton.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
 	openButton.TextColor3 = Color3.fromRGB(255, 255, 255)
 	openButton.Font = Enum.Font.SourceSansBold
@@ -213,160 +180,60 @@ local function createMenu()
 	openButton.Parent = screenGui
 	Instance.new("UICorner", openButton)
 
+	-- Главное окно
 	local frame = Instance.new("Frame")
-	frame.Size = UDim2.new(0.42, 0, 0.78, 0)
+	frame.Size = UDim2.new(0, 280, 0, 300)
 	frame.Position = UDim2.new(0.5, 0, 0.5, 0)
 	frame.AnchorPoint = Vector2.new(0.5, 0.5)
-	frame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+	frame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
 	frame.Visible = false
 	frame.Parent = screenGui
 	Instance.new("UICorner", frame)
 
 	local title = Instance.new("TextLabel")
-	title.Size = UDim2.new(1, 0, 0.12, 0)
+	title.Size = UDim2.new(1, 0, 0, 40)
 	title.BackgroundTransparency = 1
-	title.Text = "War Tycoon Premium Menu"
+	title.Text = "WT Premium Menu"
 	title.TextColor3 = Color3.fromRGB(255, 215, 0)
 	title.Font = Enum.Font.SourceSansBold
-	title.TextSize = 20
+	title.TextSize = 18
 	title.Parent = frame
 
 	local closeButton = Instance.new("TextButton")
-	closeButton.Size = UDim2.new(0, 35, 0, 35)
-	closeButton.Position = UDim2.new(1, -40, 0, 5)
+	closeButton.Size = UDim2.new(0, 40, 0, 40)
+	closeButton.Position = UDim2.new(1, -40, 0, 0)
 	closeButton.Text = "X"
 	closeButton.TextColor3 = Color3.fromRGB(255, 80, 80)
 	closeButton.BackgroundTransparency = 1
 	closeButton.Font = Enum.Font.SourceSansBold
-	closeButton.TextSize = 22
+	closeButton.TextSize = 18
 	closeButton.Parent = frame
 
+	-- Кнопка Аимбота
 	local toggleButton = Instance.new("TextButton")
-	toggleButton.Size = UDim2.new(0.85, 0, 0.12, 0)
-	toggleButton.Position = UDim2.new(0.075, 0, 0.15, 0)
+	toggleButton.Size = UDim2.new(0.9, 0, 0, 45)
+	toggleButton.Position = UDim2.new(0.05, 0, 0, 60)
 	toggleButton.Text = "АИМ И ESP: ВЫКЛ"
 	toggleButton.BackgroundColor3 = Color3.fromRGB(180, 40, 40)
 	toggleButton.TextColor3 = Color3.fromRGB(255, 255, 255)
 	toggleButton.Font = Enum.Font.SourceSansBold
-	toggleButton.TextSize = 15
+	toggleButton.TextSize = 14
 	toggleButton.Parent = frame
 	Instance.new("UICorner", toggleButton)
 
+	-- Кнопка Патронов
 	local ammoButton = Instance.new("TextButton")
-	ammoButton.Size = UDim2.new(0.85, 0, 0.12, 0)
-	ammoButton.Position = UDim2.new(0.075, 0, 0.29, 0)
-	ammoButton.Text = "БЕСК. ПАТРОНЫ (WAR TYCOON): ВЫКЛ"
+	ammoButton.Size = UDim2.new(0.9, 0, 0, 45)
+	ammoButton.Position = UDim2.new(0.05, 0, 0, 120)
+	ammoButton.Text = "БЕСК. ПАТРОНЫ: ВЫКЛ"
 	ammoButton.BackgroundColor3 = Color3.fromRGB(180, 40, 40)
 	ammoButton.TextColor3 = Color3.fromRGB(255, 255, 255)
 	ammoButton.Font = Enum.Font.SourceSansBold
-	ammoButton.TextSize = 13
+	ammoButton.TextSize = 14
 	ammoButton.Parent = frame
 	Instance.new("UICorner", ammoButton)
 
-	local fovLabel = Instance.new("TextLabel")
-	fovLabel.Size = UDim2.new(0.85, 0, 0.08, 0)
-	fovLabel.Position = UDim2.new(0.075, 0, 0.46, 0)
-	fovLabel.Text = "Угол обзора (FOV): " .. fovRadius
-	fovLabel.TextColor3 = Color3.fromRGB(210, 210, 210)
-	fovLabel.BackgroundTransparency = 1
-	fovLabel.Font = Enum.Font.SourceSans
-	fovLabel.TextSize = 14
-	fovLabel.Parent = frame
-
-	local fovSlider = Instance.new("TextButton")
-	fovSlider.Size = UDim2.new(0.85, 0, 0.05, 0)
-	fovSlider.Position = UDim2.new(0.075, 0, 0.55, 0)
-	fovSlider.BackgroundColor3 = Color3.fromRGB(55, 55, 55)
-	fovSlider.Text = ""
-	fovSlider.Parent = frame
-	Instance.new("UICorner", fovSlider)
-
-	local fovFill = Instance.new("Frame")
-	fovFill.Size = UDim2.new(0.3, 0, 1, 0)
-	fovFill.BackgroundColor3 = Color3.fromRGB(255, 215, 0)
-	fovFill.BorderSizePixel = 0
-	fovFill.Parent = fovSlider
-	Instance.new("UICorner", fovFill)
-
-	local smoothLabel = Instance.new("TextLabel")
-	smoothLabel.Size = UDim2.new(0.85, 0, 0.08, 0)
-	smoothLabel.Position = UDim2.new(0.075, 0, 0.67, 0)
-	smoothLabel.Text = "Скорость наводки: Плавная"
-	smoothLabel.TextColor3 = Color3.fromRGB(210, 210, 210)
-	smoothLabel.BackgroundTransparency = 1
-	smoothLabel.Font = Enum.Font.SourceSans
-	smoothLabel.TextSize = 14
-	smoothLabel.Parent = frame
-
-	local smoothSlider = Instance.new("TextButton")
-	smoothSlider.Size = UDim2.new(0.85, 0, 0.05, 0)
-	smoothSlider.Position = UDim2.new(0.075, 0, 0.76, 0)
-	smoothSlider.BackgroundColor3 = Color3.fromRGB(55, 55, 55)
-	smoothSlider.Text = ""
-	smoothSlider.Parent = frame
-	Instance.new("UICorner", smoothSlider)
-
-	local smoothFill = Instance.new("Frame")
-	smoothFill.Size = UDim2.new(0.5, 0, 1, 0)
-	smoothFill.BackgroundColor3 = Color3.fromRGB(255, 215, 0)
-	smoothFill.BorderSizePixel = 0
-	smoothFill.Parent = smoothSlider
-	Instance.new("UICorner", smoothFill)
-
-	local function updateFovSlider(input)
-		local percentage = math.clamp((input.Position.X - fovSlider.AbsolutePosition.X) / fovSlider.AbsoluteSize.X, 0, 1)
-		fovFill.Size = UDim2.new(percentage, 0, 1, 0)
-		fovRadius = math.floor(percentage * 350) + 50
-		fovLabel.Text = "Угол обзора (FOV): " .. fovRadius
-	end
-
-	fovSlider.InputBegan:Connect(function(input)
-		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-			updateFovSlider(input)
-			local connection
-			connection = UserInputService.InputChanged:Connect(function(changedInput)
-				if changedInput.UserInputType == Enum.UserInputType.MouseMovement or changedInput.UserInputType == Enum.UserInputType.Touch then
-					updateFovSlider(changedInput)
-				end
-			end)
-			UserInputService.InputEnded:Connect(function(endedInput)
-				if endedInput.UserInputType == Enum.UserInputType.MouseButton1 or endedInput.UserInputType == Enum.UserInputType.Touch then
-					if connection then connection:Disconnect() end
-				end
-			end)
-		end
-	end)
-
-	local function updateSmoothSlider(input)
-		local percentage = math.clamp((input.Position.X - smoothSlider.AbsolutePosition.X) / smoothSlider.AbsoluteSize.X, 0, 1)
-		smoothFill.Size = UDim2.new(percentage, 0, 1, 0)
-		smoothSpeed = percentage * 0.46 + 0.04
-		if smoothSpeed > 0.35 then
-			smoothLabel.Text = "Скорость наводки: Моментальная"
-		elseif smoothSpeed > 0.15 then
-			smoothLabel.Text = "Скорость наводки: Средняя"
-		else
-			smoothLabel.Text = "Скорость наводки: Плавная"
-		end
-	end
-
-	smoothSlider.InputBegan:Connect(function(input)
-		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-			updateSmoothSlider(input)
-			local connection
-			connection = UserInputService.InputChanged:Connect(function(changedInput)
-				if changedInput.UserInputType == Enum.UserInputType.MouseMovement or changedInput.UserInputType == Enum.UserInputType.Touch then
-					updateSmoothSlider(changedInput)
-				end
-			end)
-			UserInputService.InputEnded:Connect(function(endedInput)
-				if endedInput.UserInputType == Enum.UserInputType.MouseButton1 or endedInput.UserInputType == Enum.UserInputType.Touch then
-					if connection then connection:Disconnect() end
-				end
-			end)
-		end
-	end)
-
+	-- Обработка событий кликов
 	toggleButton.Activated:Connect(function()
 		aimbotEnabled = not aimbotEnabled
 		if aimbotEnabled then
@@ -385,10 +252,10 @@ local function createMenu()
 	ammoButton.Activated:Connect(function()
 		infAmmoEnabled = not infAmmoEnabled
 		if infAmmoEnabled then
-			ammoButton.Text = "БЕСК. ПАТРОНЫ (WAR TYCOON): ВКЛ"
+			ammoButton.Text = "БЕСК. ПАТРОНЫ: ВКЛ"
 			ammoButton.BackgroundColor3 = Color3.fromRGB(40, 160, 40)
 		else
-			ammoButton.Text = "БЕСК. ПАТРОНЫ (WAR TYCOON): ВЫКЛ"
+			ammoButton.Text = "БЕСК. ПАТРОНЫ: ВЫКЛ"
 			ammoButton.BackgroundColor3 = Color3.fromRGB(180, 40, 40)
 		end
 	end)
@@ -397,4 +264,10 @@ local function createMenu()
 	closeButton.Activated:Connect(function() frame.Visible = false; openButton.Visible = true end)
 end
 
-createMenu()
+-- Запуск создания интерфейса с проверкой на ошибки
+local success, err = pcall(createMenu)
+if success then
+    print("[WT Cheat]: Меню успешно создано на экране!")
+else
+    warn("[WT Cheat]: Ошибка при создании меню: " .. tostring(err))
+end
